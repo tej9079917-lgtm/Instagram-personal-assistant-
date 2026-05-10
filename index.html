@@ -1,0 +1,289 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Non-Follower Checker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .drag-active {
+            border-color: #8b5cf6; /* violet-500 */
+            background-color: #f5f3ff; /* violet-50 */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col items-center py-10 px-4">
+
+    <div class="max-w-2xl w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-500 to-pink-500 p-6 text-white text-center">
+            <h1 class="text-3xl font-bold mb-2 flex items-center justify-center gap-2">
+                <i data-lucide="instagram"></i>
+                Non-Follower Checker
+            </h1>
+            <p class="text-purple-100 text-sm">Find out who doesn't follow you back securely. 100% Client-Side processing.</p>
+        </div>
+
+        <div class="p-6 md:p-8 space-y-6">
+            
+            <!-- Instructions -->
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <h3 class="font-bold flex items-center gap-2 mb-2">
+                    <i data-lucide="info" class="w-4 h-4"></i> How to use this tool
+                </h3>
+                <ol class="list-decimal pl-5 space-y-1">
+                    <li>Request your data from Instagram: <strong>Settings > Your activity > Download your information</strong>.</li>
+                    <li>Select <strong>Followers and following</strong>.</li>
+                    <li>Make sure you select <strong>JSON format</strong> (not HTML).</li>
+                    <li>Extract the downloaded ZIP file.</li>
+                    <li>Upload the <code class="bg-blue-100 px-1 rounded">followers_1.json</code> and <code class="bg-blue-100 px-1 rounded">following.json</code> files below.</li>
+                </ol>
+            </div>
+
+            <!-- Upload Areas -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Followers Upload -->
+                <div class="relative border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors" id="followers-drop">
+                    <input type="file" id="followers-file" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <i data-lucide="users" class="mx-auto w-8 h-8 text-gray-400 mb-2"></i>
+                    <h4 class="font-semibold text-gray-700">Followers Data</h4>
+                    <p class="text-xs text-gray-500 mt-1">Upload followers_1.json</p>
+                    <div id="followers-status" class="mt-2 text-sm font-medium text-purple-600 hidden">File loaded!</div>
+                </div>
+
+                <!-- Following Upload -->
+                <div class="relative border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition-colors" id="following-drop">
+                    <input type="file" id="following-file" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <i data-lucide="user-check" class="mx-auto w-8 h-8 text-gray-400 mb-2"></i>
+                    <h4 class="font-semibold text-gray-700">Following Data</h4>
+                    <p class="text-xs text-gray-500 mt-1">Upload following.json</p>
+                    <div id="following-status" class="mt-2 text-sm font-medium text-pink-600 hidden">File loaded!</div>
+                </div>
+            </div>
+
+            <div id="error-message" class="text-red-500 text-sm font-medium text-center hidden"></div>
+
+            <button id="analyze-btn" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2" disabled>
+                <i data-lucide="search" class="w-5 h-5"></i>
+                Find Non-Followers
+            </button>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="hidden border-t border-gray-100 bg-gray-50 p-6 md:p-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Results (<span id="result-count">0</span>)</h2>
+                <span class="text-sm text-gray-500">People you follow who don't follow you back.</span>
+            </div>
+            
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
+                <ul id="results-list" class="divide-y divide-gray-100">
+                    <!-- Results will be injected here -->
+                </ul>
+            </div>
+            
+            <button id="copy-btn" class="mt-4 w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors flex justify-center items-center gap-2">
+                <i data-lucide="copy" class="w-4 h-4"></i>
+                Copy List to Clipboard
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        let followersData = null;
+        let followingData = null;
+
+        const followersInput = document.getElementById('followers-file');
+        const followingInput = document.getElementById('following-file');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const errorMsg = document.getElementById('error-message');
+        const resultsSection = document.getElementById('results-section');
+        const resultsList = document.getElementById('results-list');
+        const resultCount = document.getElementById('result-count');
+        const copyBtn = document.getElementById('copy-btn');
+        let nonFollowersArray = [];
+
+        // File Reader Helper
+        const readFile = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        resolve(json);
+                    } catch (err) {
+                        reject(new Error("Invalid JSON format. Please ensure you downloaded JSON, not HTML."));
+                    }
+                };
+                reader.onerror = () => reject(new Error("Error reading file."));
+                reader.readAsText(file);
+            });
+        };
+
+        // UI Updates for file inputs
+        const handleFileUpload = async (input, statusElementId, type) => {
+            const file = input.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById(statusElementId);
+            
+            try {
+                errorMsg.classList.add('hidden');
+                statusEl.textContent = "Processing...";
+                statusEl.classList.remove('hidden');
+
+                const data = await readFile(file);
+                
+                if (type === 'followers') {
+                    followersData = data;
+                    statusEl.textContent = `Loaded ${file.name}`;
+                } else {
+                    followingData = data;
+                    statusEl.textContent = `Loaded ${file.name}`;
+                }
+
+                // Enable button if both files are loaded
+                if (followersData && followingData) {
+                    analyzeBtn.disabled = false;
+                }
+            } catch (err) {
+                statusEl.classList.add('hidden');
+                errorMsg.textContent = err.message;
+                errorMsg.classList.remove('hidden');
+            }
+        };
+
+        followersInput.addEventListener('change', () => handleFileUpload(followersInput, 'followers-status', 'followers'));
+        followingInput.addEventListener('change', () => handleFileUpload(followingInput, 'following-status', 'following'));
+
+        // Smart JSON extraction (handles minor changes in IG's JSON structure)
+        function extractUsernames(data) {
+            let usernames = new Set();
+            
+            const traverse = (obj) => {
+                if (Array.isArray(obj)) {
+                    obj.forEach(traverse);
+                } else if (obj !== null && typeof obj === 'object') {
+                    // Instagram's typical format places usernames under string_list_data -> value
+                    if (obj.string_list_data && Array.isArray(obj.string_list_data)) {
+                        obj.string_list_data.forEach(item => {
+                            if (item.value && typeof item.value === 'string') {
+                                usernames.add(item.value);
+                            }
+                        });
+                    } else {
+                        // Recursively search
+                        for (let key in obj) {
+                            traverse(obj[key]);
+                        }
+                    }
+                }
+            };
+            
+            traverse(data);
+            return usernames;
+        }
+
+        // Analysis Logic
+        analyzeBtn.addEventListener('click', () => {
+            try {
+                const followersSet = extractUsernames(followersData);
+                const followingSet = extractUsernames(followingData);
+
+                if (followersSet.size === 0 && followingSet.size === 0) {
+                    throw new Error("Could not find any usernames in the files. Are you sure you uploaded the correct JSON files?");
+                }
+
+                nonFollowersArray = [];
+                followingSet.forEach(user => {
+                    if (!followersSet.has(user)) {
+                        nonFollowersArray.push(user);
+                    }
+                });
+
+                // Sort alphabetically
+                nonFollowersArray.sort();
+
+                renderResults();
+            } catch (err) {
+                errorMsg.textContent = err.message;
+                errorMsg.classList.remove('hidden');
+            }
+        });
+
+        function renderResults() {
+            resultsList.innerHTML = '';
+            resultCount.textContent = nonFollowersArray.length;
+
+            if (nonFollowersArray.length === 0) {
+                resultsList.innerHTML = `<li class="p-4 text-center text-gray-500">Wow! Everyone you follow follows you back.</li>`;
+            } else {
+                nonFollowersArray.forEach(user => {
+                    const li = document.createElement('li');
+                    li.className = 'p-4 flex justify-between items-center hover:bg-gray-50';
+                    li.innerHTML = `
+                        <span class="font-medium text-gray-800">${user}</span>
+                        <a href="https://instagram.com/${user}" target="_blank" class="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1">
+                            View Profile <i data-lucide="external-link" class="w-3 h-3"></i>
+                        </a>
+                    `;
+                    resultsList.appendChild(li);
+                });
+            }
+
+            // Re-init newly added icons
+            lucide.createIcons();
+            resultsSection.classList.remove('hidden');
+        }
+
+        // Copy to clipboard
+        copyBtn.addEventListener('click', () => {
+            if (nonFollowersArray.length === 0) return;
+            const textToCopy = nonFollowersArray.join('\n');
+            
+            // Fallback for document.execCommand if navigator.clipboard is blocked
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    updateCopyBtn();
+                });
+            } else {
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    updateCopyBtn();
+                } catch (err) {
+                    console.error('Failed to copy', err);
+                }
+                textArea.remove();
+            }
+        });
+
+        function updateCopyBtn() {
+            const originalText = copyBtn.innerHTML;
+            copyBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4 text-green-500"></i> Copied!`;
+            lucide.createIcons();
+            setTimeout(() => {
+                copyBtn.innerHTML = originalText;
+                lucide.createIcons();
+            }, 2000);
+        }
+
+    </script>
+</body>
+</html>
+
+```
+  
